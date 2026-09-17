@@ -27,11 +27,25 @@ alertmanager:
 
 
 # ------------------------------------------------------------
-# 기본 Alert Rule
-# Alertmanager를 사용하지 않으므로 기본 규칙도 생성하지 않음
+# 기본 Rule (Recording Rule + Alert Rule)
+#
+# 이름이 "Rule" 이라 알림 전용처럼 보이지만 실제로는 둘 다 만든다.
+#   - Alert Rule     : 조건이 맞으면 Alertmanager 로 알림을 쏜다
+#   - Recording Rule : 자주 쓰는 쿼리를 미리 계산해 새 메트릭으로 저장한다
+#                      예) node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate
+#
+# 처음엔 Alertmanager 를 안 쓰니 false 로 뒀는데, 그러면 Recording Rule 까지
+# 같이 꺼진다. 기본 대시보드(CPU Quota 등)는 원본 메트릭이 아니라 이
+# Recording Rule 이름을 조회하도록 만들어져 있어서, 수집은 정상인데
+# 패널만 전부 "No data" 로 나왔다.
+#   container_cpu_usage_seconds_total          -> 데이터 있음
+#   node_namespace_pod_container:...:sum_irate -> 없음  (아무도 안 만듦)
+#
+# Alertmanager 가 없어도 Alert Rule 자체는 문제되지 않는다. Prometheus 가
+# 평가만 하고 보낼 곳이 없어 그냥 firing 상태로 UI 에 남을 뿐이다.
 # ------------------------------------------------------------
 defaultRules:
-  create: false
+  create: true
 
 
 # ------------------------------------------------------------
@@ -39,6 +53,19 @@ defaultRules:
 # ------------------------------------------------------------
 prometheus:
   enabled: true
+
+  # Grafana 와 같은 이유로 NodePort 로 연다. (grafana 섹션 주석 참고)
+  # NodePort 허용 범위가 30000-32767 이라 9090 을 그대로 쓸 수 없어
+  # 연상되는 30090 으로 잡았다.
+  #
+  #   접속: http://192.168.0.101:30090
+  #
+  # 참고로 Grafana 는 이 Prometheus 를 NodePort 가 아니라 클러스터 내부
+  # DNS 로 바라본다. 즉 이 설정은 사람이 PromQL 을 직접 쳐보기 위한 것이고,
+  # 대시보드 동작과는 무관하다.
+  service:
+    type: NodePort
+    nodePort: 30090
 
   prometheusSpec:
     # worker1, worker2 중 한 곳에 배치
@@ -73,6 +100,20 @@ prometheus:
 grafana:
   enabled: true
 
+  # 기본값인 ClusterIP 는 kube-proxy 가 만드는 가상 IP 라서 노드의 NIC 에
+  # 바인딩되지 않는다. ss 에도 안 잡히고 브라우저로도 못 붙는다.
+  # port-forward 로도 되지만 터미널을 계속 띄워둬야 해서 NodePort 로 고정한다.
+  #
+  # nodePort 를 생략하면 30000-32767 중 임의로 배정되어 재설치할 때마다
+  # 주소가 바뀐다. 명시해두면 항상 같은 포트로 접속할 수 있다.
+  #
+  #   접속: http://192.168.0.101:30030
+  #   Pod 는 worker1/worker2 에 있지만 NodePort 는 모든 노드에 열리므로
+  #   master IP 로 붙어도 kube-proxy 가 알아서 넘겨준다.
+  service:
+    type: NodePort
+    nodePort: 30030
+
   # worker1, worker2 중 한 곳에 배치
   nodeSelector:
     monitoring: "true"
@@ -100,6 +141,24 @@ grafana:
   # 부팅이 느린 환경이라 liveness 첫 검사를 늦춘다. (나머지 probe 값은 차트 기본값 유지)
   livenessProbe:
     initialDelaySeconds: 300
+
+  # 데이터소스가 "Plugin not registered" 로 죽는 문제를 막는다.
+  #
+  #   Grafana 는 부팅 때 번들 플러그인을 등록한 뒤(02:04:58 Plugin registered),
+  #   곧바로 backgroundinstaller 가 최신판으로 갈아끼우려고 기존 디렉터리를
+  #   지운다. 그런데 차트 기본 securityContext 가 readOnlyRootFilesystem: true 라
+  #   /usr/share/grafana/data/plugins-bundled 를 못 지운다:
+  #     "Failed to install plugin pluginId=prometheus
+  #      error=unlinkat ...plugins-bundled/prometheus: read-only file system"
+  #   이 실패로 이미 등록돼 있던 플러그인까지 레지스트리에서 빠져서
+  #   prometheus/loki/mysql 등 13개가 전부 못 쓰는 상태가 된다.
+  #
+  #   readOnlyRootFilesystem 을 끄는 것보다 재설치 자체를 끄는 게 맞다.
+  #   이미지에 들어있는 번들 플러그인으로 충분하고, 어차피 이 환경은
+  #   외부 플러그인을 받아올 일이 없다.
+  grafana.ini:
+    plugins:
+      preinstall_disabled: true
 
 
 # ------------------------------------------------------------
