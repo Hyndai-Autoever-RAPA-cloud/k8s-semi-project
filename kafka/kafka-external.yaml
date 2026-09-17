@@ -1,0 +1,26 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: semi-app    # 앱과 같은 네임스페이스여야 "kafka:9092" 짧은 이름이 통한다
+spec:
+  type: ClusterIP
+  ports:
+  - name: kafka          # 아래 Endpoints 의 포트 name 과 반드시 같아야 함
+    protocol: TCP
+    port: 9092
+    targetPort: 9092
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: kafka            # Service 이름과 반드시 같아야 연결된다
+  namespace: semi-app    # Service 와 같은 네임스페이스여야 짝이 맞는다
+subsets:
+- addresses:
+  - ip: 192.168.0.104    # worker3 VM
+  ports:
+  - name: kafka
+    port: 9092
+    protocol: TCP

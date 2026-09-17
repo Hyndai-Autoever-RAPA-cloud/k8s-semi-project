@@ -1,0 +1,62 @@
+---
+# 외부 진입점: http://192.168.0.150  (80번 포트, metallb 가 할당한 EXTERNAL-IP)
+# ingress-nginx 가 80 으로 받아서 백엔드 8080 으로 넘긴다.
+#
+# 1) 호스트명으로 구분 (hosts 파일 등록 필요)
+#      producer.semi-project.local  -> producer  (POST /books,     Swagger)
+#      consumer.semi-project.local  -> consumer  (GET  /cqrs/book, Swagger)
+#
+# 2) 호스트명 없이 IP 로 바로 접속 (아래 세 번째 규칙)
+#      http://192.168.0.150/books      -> producer
+#      http://192.168.0.150/cqrs/book  -> consumer
+#
+# 클라이언트 hosts 파일에 등록하면 1) 도 쓸 수 있다:
+#   192.168.0.150 producer.semi-project.local
+#   192.168.0.150 consumer.semi-project.local
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: semi-ingress
+  namespace: semi-app
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: producer.semi-project.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: producer-clusterip
+            port:
+              number: 8080
+  - host: consumer.semi-project.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: consumer-clusterip
+            port:
+              number: 8080
+  # host 를 생략하면 모든 호스트/IP 요청을 받는 기본 규칙이 된다.
+  # 외부에서 hosts 등록 없이 http://192.168.0.150 으로 접속할 때 사용.
+  # 경로가 더 긴 /cqrs 가 / 보다 우선 매칭된다.
+  - http:
+      paths:
+      - path: /cqrs
+        pathType: Prefix
+        backend:
+          service:
+            name: consumer-clusterip
+            port:
+              number: 8080
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: producer-clusterip
+            port:
+              number: 8080

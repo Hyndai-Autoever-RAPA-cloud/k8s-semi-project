@@ -1,0 +1,61 @@
+# 네임스페이스별 리소스 가드레일.
+#
+# LimitRange 는 selector 가 없어 "네임스페이스 전체"에만 걸린다. 그래서 앱과 DB 를
+# 다르게 주려고 semi-app / semi-db 로 나눴다 (ns/namespace.yaml 참고).
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: semi-app-limits
+  namespace: semi-app
+spec:
+  limits:
+  - type: Container
+    defaultRequest:
+      memory: 320Mi      # 유휴 실사용 약 272Mi. 워커 여유가 빠듯해 1.2배로만 잡는다
+      cpu: 250m          # 유휴는 7~22m 지만 JVM 부팅 버스트 몫으로 확보
+    default:
+      memory: 1Gi        # 초과 시 OOMKill 이므로 request 의 3배 이상 여유
+      cpu: "1"           # 낮추면 부팅이 스로틀링돼 재시작을 유발한다. 줄이지 말 것
+    min:
+      memory: 256Mi
+      cpu: 100m
+    max:
+      memory: 2Gi
+      cpu: "2"           # 노드가 2코어라 그 이상은 의미 없음
+    maxLimitRequestRatio:
+      memory: 4          # 1Gi / 320Mi = 3.2  통과
+      cpu: 4             # 1000m / 250m = 4  통과 (2 로 두면 거부됐다)
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: semi-db-limits
+  namespace: semi-db
+spec:
+  limits:
+  - type: Container
+    # DB 는 메모리 상한 초과 = 즉시 OOMKill 이라 여유를 크게 잡는다.
+    # mysql 실사용 384Mi 기준 limit 1536Mi 는 4배 여유.
+    defaultRequest:
+      memory: 448Mi      # mysql 실사용 384Mi 바로 위. mongodb 는 100Mi 대라 여유
+      cpu: 250m
+    default:
+      memory: 1536Mi
+      cpu: "1"
+    min:
+      memory: 256Mi
+      cpu: 100m
+    max:
+      memory: 3Gi
+      cpu: "2"
+    maxLimitRequestRatio:
+      memory: 4          # 1536Mi / 448Mi = 3.43  통과
+      cpu: 4             # 1000m / 250m = 4  통과
+  # PVC 도 같은 네임스페이스 가드레일에 넣는다.
+  # 현재 PV: nfs-pv 1Gi, mongodb-pv-0/1 각 500M -> max 를 그보다 낮게 잡으면 바인딩 실패
+  - type: PersistentVolumeClaim
+    min:
+      storage: 100M
+    max:
+      storage: 5Gi

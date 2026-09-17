@@ -1,0 +1,73 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer-deployment
+  namespace: semi-app
+spec:
+  replicas: 2
+  # 무중단 배포: 새 Pod가 Ready 된 뒤에야 기존 Pod를 내림
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # 기존 Pod를 먼저 죽이지 않음
+      maxSurge: 1         # 한 번에 1개씩 추가 생성
+  minReadySeconds: 10     # Ready 후 10초간 죽지 않아야 "사용 가능"으로 인정
+  selector:
+    matchLabels:
+      app: consumer-app
+  template:
+    metadata:
+      annotations:
+        # 설정 변경 감지용. rollout.sh 가 Secret 내용의 해시로 갱신한다.
+        # 이 값이 바뀌면 template 이 바뀐 것이므로 롤링 업데이트가 트리거된다.
+        checksum/config: "unset"
+      labels:
+        app: consumer-app
+    spec:
+      containers:
+      - name: consumer
+        image: hannoi/hyundai_autoever_itstudy_jeonghan:consumer-1.0
+        ports:
+        - name: http
+          containerPort: 8080
+        envFrom:
+        - secretRef:
+            name: mongo-app-secrets
+        - secretRef:
+            name: kafka-app-secrets
+        env:
+        # Ingress 뒤에 있으므로 X-Forwarded-Host/Port/Proto 로 외부 URL 을 계산한다.
+        # 없으면 Swagger servers URL 이 컨테이너 포트(:8080)로 잡혀 외부에서 요청이 멈춘다.
+        - name: SERVER_FORWARD_HEADERS_STRATEGY
+          value: "framework"
+        # 준비되기 전에는 Service 가 트래픽을 보내지 않게 한다
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          failureThreshold: 3
+      # 종료 시 Endpoints 전파를 기다려 커넥션 유실을 막는다 (셸이 있는 이미지 전제)
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: consumer-clusterip
+  namespace: semi-app
+spec:
+  type: ClusterIP
+  ports:
+  - name: "http-port"
+    protocol: "TCP"
+    port: 80          # 서비스가 받는 포트
+    targetPort: 8080  # 컨테이너가 듣는 포트
+  selector:
+    app: consumer-app

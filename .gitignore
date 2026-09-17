@@ -1,0 +1,4 @@
+# 로컬 전용
+*.local.yaml
+*.tmp
+.DS_Store

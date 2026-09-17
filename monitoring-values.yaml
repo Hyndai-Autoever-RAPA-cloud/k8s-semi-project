@@ -1,0 +1,238 @@
+# ============================================================
+# kube-prometheus-stack 경량 구성
+#
+# 실행 노드:
+#   worker1, worker2 → monitoring=true 라벨 필요
+#
+# 저장 방식:
+#   Prometheus → 임시 로컬 저장소
+#   Grafana    → 임시 로컬 저장소
+#
+# 수집 대상:
+#   Kubernetes API Server
+#   CoreDNS
+#   Kubelet
+#   cAdvisor
+#   kube-state-metrics
+#   node-exporter
+# ============================================================
+
+
+# ------------------------------------------------------------
+# Alertmanager
+# 현재는 알림 기능을 사용하지 않으므로 설치하지 않음
+# ------------------------------------------------------------
+alertmanager:
+  enabled: false
+
+
+# ------------------------------------------------------------
+# 기본 Alert Rule
+# Alertmanager를 사용하지 않으므로 기본 규칙도 생성하지 않음
+# ------------------------------------------------------------
+defaultRules:
+  create: false
+
+
+# ------------------------------------------------------------
+# Prometheus
+# ------------------------------------------------------------
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    # worker1, worker2 중 한 곳에 배치
+    nodeSelector:
+      monitoring: "true"
+
+    # 메트릭 보관 기간
+    retention: 24h
+
+    # 메트릭 저장량 제한
+    retentionSize: "512MB"
+
+    # 메트릭 수집 및 규칙 평가 주기
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+
+    # PVC를 설정하지 않음
+    # Prometheus Pod의 임시 로컬 저장공간 사용
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 400Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+
+# ------------------------------------------------------------
+# Grafana
+# ------------------------------------------------------------
+grafana:
+  enabled: true
+
+  # worker1, worker2 중 한 곳에 배치
+  nodeSelector:
+    monitoring: "true"
+
+  # PVC를 사용하지 않음
+  persistence:
+    enabled: false
+
+  # Grafana 자체 /metrics 수집은 사용하지 않음
+  # Grafana 화면 사용 여부와는 무관함
+  serviceMonitor:
+    enabled: false
+
+  # Grafana 13 은 부팅 시 플러그인 로딩 + 내장 apiserver 초기화로 CPU 를 많이 쓴다.
+  # cpu 300m 에서는 스로틀링으로 3000 포트를 여는 데 160초 넘게 걸려
+  # liveness(60s + 10s x 10회) 에 걸려 재시작이 반복됐다.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+
+  # 부팅이 느린 환경이라 liveness 첫 검사를 늦춘다. (나머지 probe 값은 차트 기본값 유지)
+  livenessProbe:
+    initialDelaySeconds: 300
+
+
+# ------------------------------------------------------------
+# Prometheus Operator
+# ServiceMonitor 등을 감시하고 Prometheus 설정을 자동 생성
+# ------------------------------------------------------------
+prometheusOperator:
+  enabled: true
+
+  # worker1, worker2 중 한 곳에 배치
+  nodeSelector:
+    monitoring: "true"
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+
+# ------------------------------------------------------------
+# kube-state-metrics
+# Deployment, Pod, StatefulSet, PVC 등의 상태 수집
+# ------------------------------------------------------------
+kube-state-metrics:
+  enabled: true
+
+  # worker1, worker2 중 한 곳에 배치
+  nodeSelector:
+    monitoring: "true"
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+
+# ------------------------------------------------------------
+# node-exporter
+# 각 노드의 CPU, 메모리, 디스크, 네트워크 수집
+#
+# DaemonSet으로 실행되므로 각 노드에 하나씩 생성됨
+# ------------------------------------------------------------
+prometheus-node-exporter:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+
+# ------------------------------------------------------------
+# Kubernetes API Server
+# 현재 Target이 UP이므로 계속 수집
+# ------------------------------------------------------------
+kubeApiServer:
+  enabled: true
+
+
+# ------------------------------------------------------------
+# Kubelet
+#
+# /metrics
+# /metrics/cadvisor
+# /metrics/probes
+#
+# 현재 Target이 UP이므로 계속 수집
+# ------------------------------------------------------------
+kubelet:
+  enabled: true
+
+  serviceMonitor:
+    interval: 30s
+
+    cAdvisor: true
+    cAdvisorInterval: 30s
+
+    probes: true
+    probesInterval: 30s
+
+
+# ------------------------------------------------------------
+# CoreDNS
+# 현재 Target이 UP이므로 계속 수집
+# ------------------------------------------------------------
+coreDns:
+  enabled: true
+
+
+# ------------------------------------------------------------
+# kube-controller-manager
+#
+# kubeadm 기본 설정에서는 10257 포트가 localhost에만
+# 바인딩되어 Prometheus가 접근하지 못하므로 비활성화
+# ------------------------------------------------------------
+kubeControllerManager:
+  enabled: false
+
+
+# ------------------------------------------------------------
+# kube-scheduler
+#
+# kubeadm 기본 설정에서는 10259 포트가 localhost에만
+# 바인딩되어 Prometheus가 접근하지 못하므로 비활성화
+# ------------------------------------------------------------
+kubeScheduler:
+  enabled: false
+
+
+# ------------------------------------------------------------
+# etcd
+#
+# kubeadm 기본 설정에서는 2381 메트릭 포트가 localhost에만
+# 바인딩되어 Prometheus가 접근하지 못하므로 비활성화
+# ------------------------------------------------------------
+kubeEtcd:
+  enabled: false
+
+
+# ------------------------------------------------------------
+# kube-proxy
+#
+# 현재 각 노드의 10249 포트가 localhost에만 바인딩되어
+# connection refused가 발생하므로 비활성화
+# ------------------------------------------------------------
+kubeProxy:
+  enabled: false

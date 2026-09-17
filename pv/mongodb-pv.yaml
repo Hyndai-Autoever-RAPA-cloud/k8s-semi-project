@@ -1,0 +1,48 @@
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv-0    # PV 는 클러스터 스코프라 namespace 를 넣지 않는다.
+                        # 바인딩될 PVC(data-mongodb-0)는 StatefulSet 의
+                        # volumeClaimTemplates 가 semi-db 에 자동 생성한다.
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 500M
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/mongodb-semi-project/0
+    type: DirectoryOrCreate
+  nodeAffinity:                     # hostPath는 노드 로컬이므로 어느 노드인지 명시
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - worker1
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv-1
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 500M
+  accessModes:
+  - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /var/lib/mongodb-semi-project/1
+    type: DirectoryOrCreate
+  nodeAffinity:                     # hostPath는 노드 로컬이므로 어느 노드인지 명시
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - worker2

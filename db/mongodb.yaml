@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: semi-db
+spec:
+  serviceName: mongodb
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:7.0.40   # 8.x는 커널 6.19+ 기동 차단(SERVER-125742), 수정본 8.0.30 미배포
+        ports:
+        - name: mongodb
+          containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: mongo-auth
+              key: root-username
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongo-auth
+              key: root-password
+        - name: MONGO_INITDB_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mongo-auth
+              key: database
+        volumeMounts:
+        - name: data
+          mountPath: /data/db
+  volumeClaimTemplates:
+  - metadata:
+      name: data              # volumeMounts의 name과 같아야 연결됨
+    spec:
+      storageClassName: manual  # PV의 storageClassName과 같아야 짝이 맞음
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 500M        # PV 용량 이하여야 바인딩됨
+
+

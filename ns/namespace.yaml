@@ -1,0 +1,23 @@
+# 왜 네임스페이스를 앱/DB 로 나누는가
+#
+#   LimitRange 와 ResourceQuota 에는 selector 가 없다. 라벨이나 워크로드 이름으로
+#   대상을 고를 수 없고, 적용 단위가 "네임스페이스 전체"뿐이다. 따라서 앱과 DB 에
+#   서로 다른 리소스 기본값/상한을 주려면 네임스페이스를 나누는 것 외에 방법이 없다.
+#
+#   둘의 요구가 실제로 반대다:
+#     - 앱(Spring Boot): 부팅 때 CPU 를 몰아 쓰고 평소엔 거의 안 쓴다.
+#       CPU 상한이 낮으면 부팅이 스로틀링돼 startupProbe 시한을 넘긴다.
+#       -> request 는 낮게, limit 은 넉넉하게 (버스트 허용)
+#     - DB(MySQL/MongoDB): 사용량이 완만하지만 메모리 상한을 넘기면
+#       스로틀이 아니라 즉시 OOMKill(exit 137) 이라 데이터 손상 위험이 있다.
+#       -> 메모리 여유를 크게, 상한 초과가 아예 안 나게
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: semi-app
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: semi-db
